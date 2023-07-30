@@ -40,7 +40,7 @@ func (s *godogWrapper) dumpJson() {
 
 var tplPerScenario = `{{- if .Ressources}}*** Settings ***
 {{- range $r := .Ressources  }}
-Resource  "{{$r}}"
+Resource  {{$r}}
 {{- end}}
 
 {{else}}
@@ -59,7 +59,7 @@ Resource  "{{$r}}"
 
 var tplPerFeature = `{{- if .Ressources}}*** Settings ***
 {{- range $r := .Ressources  }}
-Resource  "{{$r}}"
+Resource  {{$r}}
 {{- end}}
 
 {{else}}
