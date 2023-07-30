@@ -38,32 +38,38 @@ func (s *godogWrapper) dumpJson() {
 	}
 }
 
-var tplPerScenario = `*** Settings ***
-Resource  ../../keywords/global.resource
+var tplPerScenario = `{{- if .Ressources}}*** Settings ***
+{{- range $r := .Ressources  }}
+Resource  "{{$r}}"
+{{- end}}
 
-*** Test Cases ***
-{{- range $feature := . }}
+{{else}}
+{{- end}}*** Test Cases ***
+{{- range $feature := .Features }}
 {{- range $scen_idx, $child := $feature.feature.children }}
 {{ purename $feature.uri }}= {{ cleantitle $child.scenario.name }}
     [Documentation]    {{ rmnewln $feature.feature.description  }}
     [Tags]    {{ $feature.uri }}
-    Perform {{ purename $feature.uri }}: {{ $feature.feature.name }}
+    Perform Scenario {{ purename $feature.uri }}: {{ $feature.feature.name }}
 {{range $s := $child.scenario.steps }}    {{$s.keyword}}{{$s.text}}
 {{end}}
 {{- end}}
 {{- end}}
 `
 
-var tplPerFeature = `*** Settings ***
-Resource  ../../keywords/global.resource
+var tplPerFeature = `{{- if .Ressources}}*** Settings ***
+{{- range $r := .Ressources  }}
+Resource  "{{$r}}"
+{{- end}}
 
-*** Test Cases ***
-{{- range $feature := . }}
+{{else}}
+{{- end}}*** Test Cases ***
+{{- range $feature := .Features }}
 {{ cleantitle $feature.feature.name }}
     [Documentation]    {{ rmnewln $feature.feature.description  }}
     [Tags]    {{ $feature.uri }}
 {{- range $scen_idx, $child := $feature.feature.children }}
-    Perform {{purename $feature.uri }}: {{ $child.scenario.name }}
+    Perform Scenario {{purename $feature.uri }}: {{ $child.scenario.name }}
 {{- range $step_idx, $step := $child.scenario.steps }}
     {{$step.keyword}}{{$step.text}}
 {{- end}}
@@ -71,17 +77,16 @@ Resource  ../../keywords/global.resource
 {{end}}
 `
 
-func dumpRobot(s *godog.TestSuite, sw *godogWrapper, tpl string) {
+func (sw *godogWrapper) dumpRobot(tpl string, ressources []string) {
 	m1 := regexp.MustCompile(`\s+`)
 
-	features, _ := s.RetrieveFeatures()
+	features, _ := sw.RetrieveFeatures()
 	jfeatures := make([]interface{}, 0, len(features))
 	for _, feature := range features {
 		j, _ := json.Marshal(feature)
-		var xx map[string]interface{}
-		json.Unmarshal(j, &xx)
-		jfeatures = append(jfeatures, xx)
-
+		var jf map[string]interface{}
+		json.Unmarshal(j, &jf)
+		jfeatures = append(jfeatures, jf)
 	}
 
 	t := template.Must(template.New("").
@@ -102,7 +107,10 @@ func dumpRobot(s *godog.TestSuite, sw *godogWrapper, tpl string) {
 		Parse(tpl))
 
 	var tplx bytes.Buffer
-	t.Execute(&tplx, jfeatures)
+	t.Execute(&tplx, struct {
+		Features   []interface{}
+		Ressources []string
+	}{jfeatures, ressources})
 	fmt.Println(tplx.String())
 }
 
@@ -112,7 +120,7 @@ func main() {
 		listScenarios  *bool
 		dumpJson       *bool
 		features       *[]string
-		resources      *[]string
+		ressources     *[]string
 		tags           *string
 	}{
 		useTplScenario: pflag.BoolP("tpl.feature", "F", false,
@@ -123,8 +131,8 @@ func main() {
 			"dump all features as JSON"),
 		features: pflag.StringSliceP("features", "f", []string{"./features"},
 			"provide a list of directories or feature files"),
-		resources: pflag.StringSliceP("resources", "f", []string{"./features"},
-			"provide a list of directories or feature files"),
+		ressources: pflag.StringSliceP("resources", "r", nil,
+			"provide ressources to be included in robot file"),
 		tags: pflag.StringP("tags", "t", "~@wip",
 			"specify tags to include or exclude features or steps"),
 	}
@@ -176,7 +184,8 @@ func main() {
 	if *cfg.useTplScenario {
 		tpl = tplPerScenario
 	}
-	dumpRobot(&suite.TestSuite, &suite, tpl)
+
+	suite.dumpRobot(tpl, *cfg.ressources)
 	os.Exit(0)
 
 }
