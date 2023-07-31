@@ -49,7 +49,7 @@ Resource  {{$r}}
 {{- range $scen_idx, $child := $feature.feature.children }}
 {{ purename $feature.uri }}= {{ cleantitle $child.scenario.name }}
     [Documentation]    {{ rmnewln $feature.feature.description  }}
-    [Tags]    {{ $feature.uri }} {{range $tag := $child.scenario.tags }}{{ puretag $tag.name }}{{end}}
+    [Tags]    {{ $feature.uri }} {{range $tag := $child.scenario.tags }} {{ puretag $tag.name }}{{end}}
     Perform Scenario {{ purename $feature.uri }}: {{ $feature.feature.name }}
 {{range $s := $child.scenario.steps }}    {{$s.keyword}}{{$s.text}}
 {{end}}
@@ -67,7 +67,7 @@ Resource  {{$r}}
 {{- range $feature := .Features }}
 {{ cleantitle $feature.feature.name }}
     [Documentation]    {{ rmnewln $feature.feature.description  }}
-    [Tags]    {{range $tag := $feature.feature.tags }}{{ puretag $tag.name }}{{end}} {{ $feature.uri }}
+    [Tags]    {{range $tag := $feature.feature.tags }}{{ puretag $tag.name }} {{end}} {{ $feature.uri }}
 {{- range $scen_idx, $child := $feature.feature.children }}
     Perform Scenario {{purename $feature.uri }}: {{ $child.scenario.name }}
 {{- range $step_idx, $step := $child.scenario.steps }}
