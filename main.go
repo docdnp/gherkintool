@@ -49,7 +49,7 @@ Resource  {{$r}}
 {{- range $scen_idx, $child := $feature.feature.children }}
 {{ purename $feature.uri }}= {{ cleantitle $child.scenario.name }}
     [Documentation]    {{ rmnewln $feature.feature.description  }}
-    [Tags]    {{ $feature.uri }}
+    [Tags]    {{ $feature.uri }} {{range $tag := $child.scenario.tags }}{{ puretag $tag.name }}{{end}}
     Perform Scenario {{ purename $feature.uri }}: {{ $feature.feature.name }}
 {{range $s := $child.scenario.steps }}    {{$s.keyword}}{{$s.text}}
 {{end}}
@@ -67,7 +67,7 @@ Resource  {{$r}}
 {{- range $feature := .Features }}
 {{ cleantitle $feature.feature.name }}
     [Documentation]    {{ rmnewln $feature.feature.description  }}
-    [Tags]    {{ $feature.uri }}
+    [Tags]    {{range $tag := $feature.feature.tags }}{{ puretag $tag.name }}{{end}} {{ $feature.uri }}
 {{- range $scen_idx, $child := $feature.feature.children }}
     Perform Scenario {{purename $feature.uri }}: {{ $child.scenario.name }}
 {{- range $step_idx, $step := $child.scenario.steps }}
@@ -95,6 +95,7 @@ func (sw *godogWrapper) dumpRobot(tpl string, ressources []string) {
 				return sw.re_feature.FindStringSubmatch(f)[1] + "." + strings.ReplaceAll(cs, " ", "_")
 			},
 			"purename":   func(s string) string { return sw.re_feature.FindStringSubmatch(s)[1] },
+			"puretag":    func(s string) string { return strings.Replace(s, "@", "", -1) },
 			"features":   func() []interface{} { return jfeatures },
 			"cleantitle": func(s string) string { return strings.ReplaceAll(s, "'", "`") },
 			"rmnewln": func(s string) string {
