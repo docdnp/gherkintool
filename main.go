@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +14,11 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/pflag"
+)
+
+var (
+	//go:embed templates/*.robot
+	templates embed.FS
 )
 
 type godogWrapper struct {
@@ -38,45 +44,6 @@ func (s *godogWrapper) dumpJson() {
 	}
 }
 
-var tplPerScenario = `{{- if .Ressources}}*** Settings ***
-{{- range $r := .Ressources  }}
-Resource  {{$r}}
-{{- end}}
-
-{{else}}
-{{- end}}*** Test Cases ***
-{{- range $feature := .Features }}
-{{- range $scen_idx, $child := $feature.feature.children }}
-{{ purename $feature.uri }}= {{ cleantitle $child.scenario.name }}
-    [Documentation]    {{ rmnewln $feature.feature.description  }}
-    [Tags]    {{range $tag := $child.scenario.tags }}{{ puretag $tag.name }}    {{end}}{{ $feature.uri }}
-    Perform Scenario {{ purename $feature.uri }}: {{ $feature.feature.name }}
-{{range $s := $child.scenario.steps }}    {{$s.keyword}}{{$s.text}}
-{{end}}
-{{- end}}
-{{- end}}
-`
-
-var tplPerFeature = `{{- if .Ressources}}*** Settings ***
-{{- range $r := .Ressources  }}
-Resource  {{$r}}
-{{- end}}
-
-{{else}}
-{{- end}}*** Test Cases ***
-{{- range $feature := .Features }}
-{{ cleantitle $feature.feature.name }}
-    [Documentation]    {{ rmnewln $feature.feature.description  }}
-    [Tags]    {{range $tag := $feature.feature.tags }}{{ puretag $tag.name }}    {{end}}{{ $feature.uri }}
-{{- range $scen_idx, $child := $feature.feature.children }}
-    Perform Scenario {{purename $feature.uri }}: {{ $child.scenario.name }}
-{{- range $step_idx, $step := $child.scenario.steps }}
-    {{$step.keyword}}{{$step.text}}
-{{- end}}
-{{- end}}
-{{end}}
-`
-
 func (sw *godogWrapper) dumpRobot(tpl string, ressources []string) {
 	m1 := regexp.MustCompile(`\s+`)
 
@@ -89,29 +56,35 @@ func (sw *godogWrapper) dumpRobot(tpl string, ressources []string) {
 		jfeatures = append(jfeatures, jf)
 	}
 
-	t := template.Must(template.New("").
-		Funcs(template.FuncMap{
-			"Title": func(f string, cs string) string {
-				return sw.re_feature.FindStringSubmatch(f)[1] + "." + strings.ReplaceAll(cs, " ", "_")
-			},
-			"purename":   func(s string) string { return sw.re_feature.FindStringSubmatch(s)[1] },
-			"puretag":    func(s string) string { return strings.Replace(s, "@", "", -1) },
-			"features":   func() []interface{} { return jfeatures },
-			"cleantitle": func(s string) string { return strings.ReplaceAll(s, "'", "`") },
-			"rmnewln": func(s string) string {
-				return m1.ReplaceAllString(
-					strings.ReplaceAll(s, "\n", ""),
-					" ")
-			},
+	fm := template.FuncMap{
+		"Title": func(f string, cs string) string {
+			return sw.re_feature.FindStringSubmatch(f)[1] + "." + strings.ReplaceAll(cs, " ", "_")
 		},
-		).
-		Parse(tpl))
+		"purename":   func(s string) string { return sw.re_feature.FindStringSubmatch(s)[1] },
+		"puretag":    func(s string) string { return strings.Replace(s, "@", "", -1) },
+		"features":   func() []interface{} { return jfeatures },
+		"cleantitle": func(s string) string { return strings.ReplaceAll(s, "'", "`") },
+		"rmnewln": func(s string) string {
+			return m1.ReplaceAllString(
+				strings.ReplaceAll(s, "\n", ""),
+				" ")
+		},
+	}
+
+	t, err := template.New("main.robot").Funcs(fm).ParseFS(templates, "*/*.robot")
+	if err != nil {
+		panic(err)
+	}
 
 	var tplx bytes.Buffer
-	t.Execute(&tplx, struct {
+	err = t.Execute(&tplx, struct {
 		Features   []interface{}
 		Ressources []string
-	}{jfeatures, ressources})
+		Template   string
+	}{jfeatures, ressources, tpl})
+	if err != nil {
+		panic(err)
+	}
 	fmt.Println(tplx.String())
 }
 
@@ -181,9 +154,9 @@ func main() {
 		os.Exit(0)
 	}
 
-	tpl := tplPerFeature
+	tpl := "features"
 	if *cfg.useTplScenario {
-		tpl = tplPerScenario
+		tpl = "scenarios"
 	}
 
 	suite.dumpRobot(tpl, *cfg.ressources)
