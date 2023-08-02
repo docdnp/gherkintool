@@ -71,15 +71,26 @@ func (d *dslParser) extractFeatures(filename string, content string) features {
 	return features
 }
 
-func Feature(filename string) error {
-	file, err := os.ReadFile(filename)
-	if err != nil {
-		return fmt.Errorf("unknown file '%s': %v", filename, err)
+func Feature(filenames []string) error {
+	if len(filenames) == 0 {
+		return fmt.Errorf("specify a code file containing comments to extract")
 	}
-	features := newDslParser().extractFeatures(filename, string(file))
+	dparser := newDslParser()
+	for _, filename := range filenames {
+		file, err := os.ReadFile(filename)
+		if err != nil {
+			return fmt.Errorf("unknown file '%s': %v", filename, err)
+		}
+		features := dparser.extractFeatures(filename, string(file))
 
-	for _, i := range features {
-		fmt.Printf("%s", i)
+		if len(features) == 0 {
+			continue
+		}
+		fmt.Printf("=== %s\n", filename)
+		for _, i := range features {
+			fmt.Printf("%s", i)
+		}
+		fmt.Printf("=== %s\n\n", filename)
 	}
 	return nil
 }

@@ -1,11 +1,11 @@
 Usage: gherkintool [Command] [Options]
 
   gherkintool offers two main commands
-    robot           convert feature files into robot test cases
-    feature         convert comments of arbitrary text files containing gherkin
-                    into corresponding features, if the comments match the following 
-                    form:
-                            // [gherkin]
-                            // ... 
-                            // [end]
+    robot    [Opts]     convert feature files into robot test cases
+    feature  [Files]    convert comments of arbitrary text files containing gherkin
+                        into corresponding features, if the comments match the following 
+                        form:
+                                // [gherkin]
+                                // ... 
+                                // [end]
 

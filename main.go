@@ -46,12 +46,12 @@ func (s *godogWrapper) dumpJson() {
 	}
 }
 
-func (sw *godogWrapper) dumpRobot(tpl string, ressources []string) {
+func (sw *godogWrapper) dumpRobot(tpl string, ressources []string) error {
 	m1 := regexp.MustCompile(`\s+`)
 
 	features, err := sw.RetrieveFeatures()
 	if err != nil {
-		panic(err)
+		return err
 	}
 	jfeatures := make([]interface{}, 0, len(features))
 	for _, feature := range features {
@@ -92,6 +92,7 @@ func (sw *godogWrapper) dumpRobot(tpl string, ressources []string) {
 		panic(err)
 	}
 	fmt.Println(tplx.String())
+	return nil
 }
 
 var usage = func(fs ...*flagSet) func() {
@@ -115,7 +116,8 @@ func (fs *flagSet) dumpUsage(reindent *regexp.Regexp) {
 
 type flagSet struct {
 	*pflag.FlagSet
-	Name string
+	Error func(err error)
+	Name  string
 }
 
 func newFlagSet(name string) *flagSet {
@@ -126,6 +128,8 @@ func main() {
 	robot := newFlagSet("robot")
 	feature := newFlagSet("feature")
 	robot.Usage = usage(robot)
+	feature.Usage = func() { robot.Usage(); os.Exit(0) }
+	feature.Error = func(err error) { fmt.Println("Error:", err); robot.Usage(); os.Exit(1) }
 
 	cfg := struct {
 		useTplScenario *bool
@@ -158,8 +162,10 @@ func main() {
 
 	switch cmd {
 	case "feature":
-		feature.Parse(os.Args[1:])
-		err := subcommands.Feature(feature.Arg(0))
+		if err := feature.Parse(os.Args); err != nil {
+			feature.Error(err)
+		}
+		err := subcommands.Feature(os.Args[1:])
 		if err != nil {
 			errs = append(errs, err)
 		} else {
@@ -169,14 +175,6 @@ func main() {
 		robot.Parse(os.Args[1:])
 		if len(*cfg.features) == 0 {
 			errs = append(errs, fmt.Errorf("didn't specify feature directories of files"))
-		}
-		for _, f := range *cfg.features {
-			if _, e := os.Stat(f); os.IsNotExist(e) {
-				if e == nil {
-					continue
-				}
-				errs = append(errs, fmt.Errorf("unknown feature dir or file: %w", e))
-			}
 		}
 	case "":
 		errs = append(errs, fmt.Errorf("specify a subcommand"))
@@ -190,6 +188,15 @@ func main() {
 		}
 		robot.Usage()
 		os.Exit(1)
+	}
+
+	for _, f := range *cfg.features {
+		if _, e := os.Stat(f); os.IsNotExist(e) {
+			if e == nil {
+				continue
+			}
+			errs = append(errs, fmt.Errorf("unknown feature dir or file: %w", e))
+		}
 	}
 
 	suite := godogWrapper{godog.TestSuite{
@@ -216,7 +223,9 @@ func main() {
 		tpl = "scenarios"
 	}
 
-	suite.dumpRobot(tpl, *cfg.ressources)
+	if err := suite.dumpRobot(tpl, *cfg.ressources); err != nil {
+		feature.Error(err)
+	}
 	os.Exit(0)
 
 }
