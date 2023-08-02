@@ -11,14 +11,16 @@ import (
 	"text/template"
 
 	"github.com/cucumber/godog"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
+	"github.com/docdnp/gherkintool/subcommands"
 	"github.com/spf13/pflag"
 )
 
 var (
 	//go:embed templates/*.robot
 	templates embed.FS
+
+	//go:embed templates/usage.txt
+	usageIntro string
 )
 
 type godogWrapper struct {
@@ -47,7 +49,10 @@ func (s *godogWrapper) dumpJson() {
 func (sw *godogWrapper) dumpRobot(tpl string, ressources []string) {
 	m1 := regexp.MustCompile(`\s+`)
 
-	features, _ := sw.RetrieveFeatures()
+	features, err := sw.RetrieveFeatures()
+	if err != nil {
+		panic(err)
+	}
 	jfeatures := make([]interface{}, 0, len(features))
 	for _, feature := range features {
 		j, _ := json.Marshal(feature)
@@ -76,19 +81,52 @@ func (sw *godogWrapper) dumpRobot(tpl string, ressources []string) {
 		panic(err)
 	}
 
-	var tplx bytes.Buffer
-	err = t.Execute(&tplx, struct {
+	data := struct {
 		Features   []interface{}
 		Ressources []string
 		Template   string
-	}{jfeatures, ressources, tpl})
-	if err != nil {
+	}{jfeatures, ressources, tpl}
+
+	var tplx bytes.Buffer
+	if err = t.Execute(&tplx, data); err != nil {
 		panic(err)
 	}
 	fmt.Println(tplx.String())
 }
 
+var usage = func(fs ...*flagSet) func() {
+	reindent := regexp.MustCompile(`(?is)(\s*)(-)(.*?\n)`)
+	return func() {
+		fmt.Print(usageIntro)
+		for _, f := range fs {
+			f.dumpUsage(reindent)
+		}
+	}
+}
+
+func (fs *flagSet) dumpUsage(reindent *regexp.Regexp) {
+	h := fmt.Sprintf("-%s: \n", fs.Name)
+	fmt.Print(
+		reindent.ReplaceAllString(h, "    $1$3"),
+		reindent.ReplaceAllString(fs.FlagUsages(), "     $1$2$3"),
+		"\n",
+	)
+}
+
+type flagSet struct {
+	*pflag.FlagSet
+	Name string
+}
+
+func newFlagSet(name string) *flagSet {
+	return &flagSet{FlagSet: pflag.NewFlagSet(name, pflag.ContinueOnError), Name: name}
+}
+
 func main() {
+	robot := newFlagSet("robot")
+	feature := newFlagSet("feature")
+	robot.Usage = usage(robot)
+
 	cfg := struct {
 		useTplScenario *bool
 		listScenarios  *bool
@@ -97,43 +135,62 @@ func main() {
 		ressources     *[]string
 		tags           *string
 	}{
-		useTplScenario: pflag.BoolP("tpl.feature", "F", false,
+		useTplScenario: robot.BoolP("tpl.feature", "F", false,
 			"create one robot test per scenario."),
-		listScenarios: pflag.BoolP("list", "l", false,
+		listScenarios: robot.BoolP("list", "l", false,
 			"list all available scenarios as they are named during a godog run"),
-		dumpJson: pflag.BoolP("json", "j", false,
+		dumpJson: robot.BoolP("json", "j", false,
 			"dump all features as JSON"),
-		features: pflag.StringSliceP("features", "f", []string{"./features"},
+		features: robot.StringSliceP("features", "f", []string{"./features"},
 			"provide a list of directories or feature files"),
-		ressources: pflag.StringSliceP("resources", "r", nil,
+		ressources: robot.StringSliceP("resources", "r", nil,
 			"provide ressources to be included in robot file"),
-		tags: pflag.StringP("tags", "t", "~@wip",
+		tags: robot.StringP("tags", "t", "~@wip",
 			"specify tags to include or exclude features or steps"),
 	}
-	pflag.Parse()
 
+	var cmd string
 	errs := []error{}
-	if len(*cfg.features) == 0 {
-		errs = append(errs, fmt.Errorf("didn't specify feature directories of files"))
+	os.Args = os.Args[1:]
+	if len(os.Args) >= 1 {
+		cmd = os.Args[0]
 	}
-	for _, f := range *cfg.features {
-		if _, e := os.Stat(f); os.IsNotExist(e) {
-			if e == nil {
-				continue
-			}
-			errs = append(errs, fmt.Errorf("unknown feature dir or file: %w", e))
+
+	switch cmd {
+	case "feature":
+		feature.Parse(os.Args[1:])
+		err := subcommands.Feature(feature.Arg(0))
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			os.Exit(0)
 		}
+	case "robot":
+		robot.Parse(os.Args[1:])
+		if len(*cfg.features) == 0 {
+			errs = append(errs, fmt.Errorf("didn't specify feature directories of files"))
+		}
+		for _, f := range *cfg.features {
+			if _, e := os.Stat(f); os.IsNotExist(e) {
+				if e == nil {
+					continue
+				}
+				errs = append(errs, fmt.Errorf("unknown feature dir or file: %w", e))
+			}
+		}
+	case "":
+		errs = append(errs, fmt.Errorf("specify a subcommand"))
+	default:
+		errs = append(errs, fmt.Errorf("unknown subcommand: '%s'", cmd))
 	}
+
 	if len(errs) > 0 {
 		for _, e := range errs {
 			fmt.Println("Error:", e)
 		}
-		pflag.Usage()
+		robot.Usage()
 		os.Exit(1)
 	}
-
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 
 	suite := godogWrapper{godog.TestSuite{
 		ScenarioInitializer: func(sc *godog.ScenarioContext) {},
